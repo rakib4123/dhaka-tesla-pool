@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PASSENGER
+  DRIVER
+
+  @@map("user_role")
+}
+
+enum RideStatus {
+  REQUESTED
+  MATCHED
+  DRIVER_ARRIVED
+  STARTED
+  COMPLETED
+  CANCELLED
+
+  @@map("ride_status")
+}
+
+enum PoolStatus {
+  OPEN
+  DRIVER_ARRIVED
+  STARTED
+  COMPLETED
+  CANCELLED
+
+  @@map("pool_status")
+}
+
+enum CancelActor {
+  PASSENGER
+  DRIVER
+
+  @@map("cancel_actor")
+}
+
+/// Anyone who can sign in: passengers self-register, drivers are seeded.
+model User {
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String
+  email        String        @unique
+  phone        String?
+  passwordHash String        @map("password_hash")
+  role         UserRole
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  vehicle      Vehicle?
+  rideRequests RideRequest[]
+  events       RideEvent[]
+
+  @@map("users")
+}
+
+/// Seeded reference data: named Dhaka areas on a 1 km grid (Manhattan distance).
+model Zone {
+  id       Int           @id @default(autoincrement())
+  name     String        @unique
+  gridX    Int           @map("grid_x")
+  gridY    Int           @map("grid_y")
+  vehicles Vehicle[]
+  pickups  RideRequest[] @relation("PickupZone")
+  dropoffs RideRequest[] @relation("DropoffZone")
+  pools    Pool[]
+
+  @@map("zones")
+}
+
+/// A driver's Tesla (exactly one per driver) and its availability.
+model Vehicle {
+  id            String  @id @default(uuid()) @db.Uuid
+  driverId      String  @unique @map("driver_id") @db.Uuid
+  driver        User    @relation(fields: [driverId], references: [id])
+  name          String
+  plate         String  @unique
+  capacity      Int
+  isOnline      Boolean @default(false) @map("is_online")
+  currentZoneId Int?    @map("current_zone_id")
+  currentZone   Zone?   @relation(fields: [currentZoneId], references: [id])
+  pools         Pool[]
+
+  @@map("vehicles")
+}
+
+/// One passenger's ticket. Fare columns stay NULL until the pool STARTS, then they are locked.
+model RideRequest {
+  id                  String       @id @default(uuid()) @db.Uuid
+  passengerId         String       @map("passenger_id") @db.Uuid
+  passenger           User         @relation(fields: [passengerId], references: [id])
+  pickupZoneId        Int          @map("pickup_zone_id")
+  pickupZone          Zone         @relation("PickupZone", fields: [pickupZoneId], references: [id])
+  dropoffZoneId       Int          @map("dropoff_zone_id")
+  dropoffZone         Zone         @relation("DropoffZone", fields: [dropoffZoneId], references: [id])
+  seats               Int
+  distanceKm          Int          @map("distance_km")
+  status              RideStatus   @default(REQUESTED)
+  cancelledBy         CancelActor? @map("cancelled_by")
+  estimateSoloPaisa   Int          @map("estimate_solo_paisa")
+  estimatePooledPaisa Int          @map("estimate_pooled_paisa")
+  fareBasePaisa       Int?         @map("fare_base_paisa")
+  fareDistancePaisa   Int?         @map("fare_distance_paisa")
+  fareDiscountPaisa   Int?         @map("fare_discount_paisa")
+  fareTotalPaisa      Int?         @map("fare_total_paisa")
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  memberships         PoolMember[]
+  events              RideEvent[]
+
+  @@index([status, pickupZoneId])
+  @@index([passengerId, createdAt])
+  @@map("ride_requests")
+}
+
+/// One shared trip in one Tesla. capacity is copied from the vehicle so a CHECK can guard seats_taken.
+model Pool {
+  id           String       @id @default(uuid()) @db.Uuid
+  vehicleId    String       @map("vehicle_id") @db.Uuid
+  vehicle      Vehicle      @relation(fields: [vehicleId], references: [id])
+  pickupZoneId Int          @map("pickup_zone_id")
+  pickupZone   Zone         @relation(fields: [pickupZoneId], references: [id])
+  capacity     Int
+  seatsTaken   Int          @default(0) @map("seats_taken")
+  status       PoolStatus   @default(OPEN)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  startedAt    DateTime?    @map("started_at") @db.Timestamptz(3)
+  completedAt  DateTime?    @map("completed_at") @db.Timestamptz(3)
+  members      PoolMember[]
+  events       RideEvent[]
+
+  @@index([status, pickupZoneId])
+  @@index([vehicleId, createdAt])
+  @@map("pools")
+}
+
+/// Who is (left_at NULL) or was (left_at set) in which pool.
+model PoolMember {
+  id            String      @id @default(uuid()) @db.Uuid
+  poolId        String      @map("pool_id") @db.Uuid
+  pool          Pool        @relation(fields: [poolId], references: [id])
+  rideRequestId String      @map("ride_request_id") @db.Uuid
+  rideRequest   RideRequest @relation(fields: [rideRequestId], references: [id])
+  seats         Int
+  joinedAt      DateTime    @default(now()) @map("joined_at") @db.Timestamptz(3)
+  leftAt        DateTime?   @map("left_at") @db.Timestamptz(3)
+  leftReason    String?     @map("left_reason")
+
+  @@index([poolId])
+  @@map("pool_members")
+}
+
+/// Append-only audit trail. actor_user_id NULL means "the system" (e.g. auto-join).
+model RideEvent {
+  id            BigInt       @id @default(autoincrement())
+  rideRequestId String?      @map("ride_request_id") @db.Uuid
+  rideRequest   RideRequest? @relation(fields: [rideRequestId], references: [id])
+  poolId        String?      @map("pool_id") @db.Uuid
+  pool          Pool?        @relation(fields: [poolId], references: [id])
+  actorUserId   String?      @map("actor_user_id") @db.Uuid
+  actor         User?        @relation(fields: [actorUserId], references: [id])
+  type          String
+  fromStatus    String?      @map("from_status")
+  toStatus      String?      @map("to_status")
+  metadata      Json?
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([rideRequestId, createdAt])
+  @@index([poolId, createdAt])
+  @@map("ride_events")
+}
