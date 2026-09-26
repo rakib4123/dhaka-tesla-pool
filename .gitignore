@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+build/
+coverage/
+
+# environment — only .env.example is committed
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
