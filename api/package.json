@@ -13,9 +13,13 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:generate": "prisma generate"
   },
   "dependencies": {
+    "@prisma/client": "6.19",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "helmet": "^8.3.0",
@@ -28,6 +32,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^24.19.0",
     "@types/supertest": "^7.2.1",
+    "prisma": "6.19",
     "supertest": "^7.3.0",
     "tsx": "^4.23.15",
     "typescript": "~5.9.3",

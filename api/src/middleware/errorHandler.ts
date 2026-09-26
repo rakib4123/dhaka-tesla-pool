@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { AppError } from '../lib/AppError';
 import { logger } from '../lib/logger';
+import { isUniqueViolation } from '../lib/prismaErrors';
 
 export const notFoundHandler: RequestHandler = (req, _res, next) => {
   next(new AppError(404, 'NOT_FOUND', `No route for ${req.method} ${req.path}`));
@@ -12,6 +13,7 @@ interface BodyParserError extends Error {
 
 function toAppError(err: unknown): AppError {
   if (err instanceof AppError) return err;
+  if (isUniqueViolation(err)) return new AppError(409, 'CONFLICT', 'That conflicts with existing data');
   const bodyError = err as BodyParserError | undefined;
   if (bodyError?.type === 'entity.parse.failed') {
     return new AppError(400, 'VALIDATION_ERROR', 'Request body is not valid JSON');
