@@ -118,3 +118,13 @@ export async function acceptRequest(driverId: string, rideRequestId: string): Pr
   }
   return getDriverPoolById(poolId);
 }
+
+export async function getDriverHistory(driverId: string): Promise<DriverPoolView[]> {
+  const pools = await prisma.pool.findMany({
+    where: { vehicle: { driverId }, status: { in: ['COMPLETED', 'CANCELLED'] } },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    include: driverPoolInclude,
+  });
+  return pools.map((pool) => toDriverPoolView(pool, true));
+}
