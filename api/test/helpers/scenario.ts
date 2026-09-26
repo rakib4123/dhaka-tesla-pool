@@ -18,3 +18,13 @@ export async function cancelRide(who: PassengerKey, rideId: string) {
 export async function getRide(who: PassengerKey, rideId: string) {
   return api().get(`/api/rides/${rideId}`).set(bearer(await loginAs(who)));
 }
+
+export type DriverKey = 'jashim' | 'monir';
+
+export async function goOnline(driver: DriverKey, zone: ZoneName) {
+  return api().put('/api/driver/availability').set(bearer(await loginAs(driver))).send({ online: true, zoneId: await zoneId(zone) });
+}
+
+export async function goOffline(driver: DriverKey) {
+  return api().put('/api/driver/availability').set(bearer(await loginAs(driver))).send({ online: false });
+}
