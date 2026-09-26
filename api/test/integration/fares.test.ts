@@ -26,6 +26,7 @@ describe('zones and fare estimates', () => {
     ['more seats than any Tesla has', async () => ({ pickupZoneId: await zoneId('Banani'), dropoffZoneId: await zoneId('Mohakhali'), seats: 4 })],
     ['zero seats', async () => ({ pickupZoneId: await zoneId('Banani'), dropoffZoneId: await zoneId('Mohakhali'), seats: 0 })],
     ['an unknown zone', async () => ({ pickupZoneId: 99999, dropoffZoneId: await zoneId('Mohakhali'), seats: 1 })],
+    ['a zone id beyond 32-bit range', async () => ({ pickupZoneId: 3_000_000_000, dropoffZoneId: await zoneId('Mohakhali'), seats: 1 })],
     ['a string seat count', async () => ({ pickupZoneId: await zoneId('Banani'), dropoffZoneId: await zoneId('Mohakhali'), seats: '1' })],
   ])('rejects %s with 400', async (_label, body) => {
     const res = await api().post('/api/fares/estimate').set(bearer(await loginAs('nusrat'))).send(await body());
