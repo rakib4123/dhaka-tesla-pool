@@ -17,4 +17,9 @@ export async function loginAs(who: CastKey): Promise<string> {
   return res.body.token as string;
 }
 
+/** Cached tokens name user ids; call this whenever the cast is re-created with new ids. */
+export function forgetTokens(): void {
+  tokens.clear();
+}
+
 export const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
