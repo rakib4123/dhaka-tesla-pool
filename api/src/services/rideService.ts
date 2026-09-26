@@ -7,6 +7,7 @@ import { isUniqueViolation } from '../lib/prismaErrors';
 import type { TripInput } from '../routes/schemas';
 import { recordEvent } from './events';
 import { resolveTrip } from './fareService';
+import { tryAutoJoin } from './matchingService';
 import { toZoneRef, type RideDetailView, type RideView } from './views';
 
 const rideInclude = {
@@ -94,6 +95,8 @@ export async function createRide(passengerId: string, input: TripInput): Promise
     throw err;
   }
 
+  // "Figure it out in about a second": try to seat the rider right away.
+  await tryAutoJoin(rideId);
   return getRideForPassenger(rideId, passengerId);
 }
 

@@ -106,3 +106,15 @@ export interface DriverPoolView {
   startedAt: string | null;
   completedAt: string | null;
 }
+
+export interface RelevantRequestView {
+  rideId: string;
+  firstName: string;
+  seats: number;
+  pickupZone: ZoneRef;
+  dropoffZone: ZoneRef;
+  distanceKm: number;
+  estimateSoloPaisa: number;
+  estimatePooledPaisa: number;
+  requestedAt: string;
+}

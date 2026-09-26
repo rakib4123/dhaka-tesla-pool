@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authenticate, currentUser, requireRole } from '../middleware/authenticate';
 import { parseBody, parseId } from '../middleware/validate';
 import * as driverService from '../services/driverService';
+import { listRelevantRequests } from '../services/matchingService';
 
 const AvailabilitySchema = z
   .object({ online: z.boolean(), zoneId: z.number().int().positive().optional() })
@@ -22,4 +23,8 @@ driverRouter.post('/requests/:id/accept', async (req, res) => {
 
 driverRouter.get('/pool', async (req, res) => {
   res.json({ pool: await driverService.getDriverPool(currentUser(req).id) });
+});
+
+driverRouter.get('/requests', async (req, res) => {
+  res.json(await listRelevantRequests(currentUser(req).id));
 });
