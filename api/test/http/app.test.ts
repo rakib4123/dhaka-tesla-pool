@@ -23,6 +23,12 @@ describe('HTTP foundation', () => {
     expect(res.body.error.code).toBe('PAYLOAD_TOO_LARGE');
   });
 
+  it('keeps other malformed-request errors as 4xx JSON, never 500', async () => {
+    const res = await request(app).post('/api/rides').set('Content-Type', 'application/json; charset=latin1').send('{}');
+    expect(res.status).toBe(415);
+    expect(res.body.error.code).toBe('BAD_REQUEST');
+  });
+
   it('sets security headers and a request id', async () => {
     const res = await request(app).get('/api/nope');
     expect(res.headers['x-content-type-options']).toBe('nosniff');

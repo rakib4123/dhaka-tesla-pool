@@ -68,6 +68,9 @@ describe('ride requests', () => {
   it('answers malformed ride ids with 404, not 500', async () => {
     expect((await getRide('nusrat', 'not-a-uuid')).status).toBe(404);
     expect((await cancelRide('nusrat', '123')).status).toBe(404);
+    const badEncoding = await api().get('/api/rides/%E0%A4%A').set(bearer(await loginAs('nusrat')));
+    expect(badEncoding.status).toBe(400);
+    expect(badEncoding.body.error.code).toBe('BAD_REQUEST');
   });
 
   it('lets Nusrat cancel a waiting ride exactly once, then book again', async () => {

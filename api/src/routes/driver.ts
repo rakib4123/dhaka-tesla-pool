@@ -6,7 +6,7 @@ import * as driverService from '../services/driverService';
 import { listRelevantRequests } from '../services/matchingService';
 
 const AvailabilitySchema = z
-  .object({ online: z.boolean(), zoneId: z.number().int().positive().optional() })
+  .object({ online: z.boolean(), zoneId: z.int32().positive().optional() })
   .refine((body) => !body.online || body.zoneId !== undefined, { message: 'Choose a zone to go online', path: ['zoneId'] });
 
 export const driverRouter = Router();
