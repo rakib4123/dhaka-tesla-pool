@@ -23,9 +23,9 @@ Success depends as much on **process** as on features:
 | Layer | Choice | Realistic alternatives | Why it fits | What would make us switch |
 |---|---|---|---|---|
 | Frontend | React + Vite + React Router + Tailwind | Next.js App Router | The UI is purely client-side and talks to a separate API, so SSR adds nothing. The PRD allows plain React with a router. | SEO or public landing pages, or server-rendered first paint. |
-| Backend | Node.js + Express + TypeScript | NestJS, Fastify | There's no hidden magic: each request flows middleware → route → service → DB. This is the easiest stack to defend line by line. | A larger team would benefit from NestJS module and DI conventions. A throughput bottleneck would point to Fastify. |
+| Backend | Node.js + Express 5 + TypeScript 5.9 | NestJS, Fastify | There's no hidden magic: each request flows middleware → route → service → DB. This is the easiest stack to defend line by line. | A larger team would benefit from NestJS module and DI conventions. A throughput bottleneck would point to Fastify. |
 | Database | PostgreSQL 16 | MySQL, SQLite | Row locks and conditional updates make capacity enforcement correct under concurrency. We also get CHECK constraints and partial unique indexes. SQLite serializes writes, so the race could never happen there. | None expected at MVP scale. Scaling notes are in §12. |
-| DB access | Prisma (schema, migrations, seed) plus raw SQL for the seat claim | Drizzle, Kysely, raw `pg` | The schema file reads like an ERD, and migrations and seeding are built in. The one concurrency-critical statement is plain SQL, so it's easy to see. | If much of the domain logic ends up in raw SQL, Kysely or Drizzle would fit better. |
+| DB access | Prisma 6 (pinned; schema, migrations, seed) plus raw SQL for the seat claim | Drizzle, Kysely, raw `pg` | The schema file reads like an ERD, and migrations and seeding are built in. The one concurrency-critical statement is plain SQL, so it's easy to see. | If much of the domain logic ends up in raw SQL, Kysely or Drizzle would fit better. |
 | Auth | bcrypt + JWT (Bearer, 12h expiry) | Session cookies, Auth.js | Stateless auth that's simple to test with Supertest. Web and API deploy to different origins, so cookies would need SameSite=None and CORS credentials. | If XSS risk grows (the token lives in localStorage), switch to httpOnly cookies behind a same-origin proxy. |
 | Validation | Zod | Joi, express-validator | One schema per request body, with inferred TypeScript types. | — |
 | Tests | Vitest + Supertest against a real Postgres | Jest | Fast, TypeScript-native, and the same runner covers unit and integration tests. The concurrency test needs a real database. | — |
@@ -64,7 +64,7 @@ A ride request R can join a pool P only when all four conditions hold:
 
 Checking this against the cast:
 - Nusrat (Banani → Mohakhali) and Rafiq (Banani → Gulshan 1): the destinations are 1 km apart, so they're compatible.
-- A Banani → Uttara rider is 11 km from Mohakhali, so they're incompatible.
+- A Banani → Uttara rider is 14 km from Mohakhali, so they're incompatible.
 
 ### 3.3 Fare model
 
@@ -137,7 +137,7 @@ Passenger-facing labels:
 1. **Joining.** A pool accepts riders until it is STARTED. It stops accepting when it's full. A full pool shows the driver "Bullet is full — ready to go". The trip never starts automatically: the driver always taps **Start**.
 2. **Transitions are strict.** A pool must go OPEN → DRIVER_ARRIVED before STARTED. Any other transition gets `409 INVALID_TRANSITION`.
 3. **Passenger cancel** is allowed from REQUESTED, MATCHED, or DRIVER_ARRIVED, and not from STARTED onwards. For a matched rider, cancelling sets `pool_members.left_at`, frees their seats, and sets `cancelled_by = PASSENGER`. If the pool is then empty, it becomes CANCELLED.
-4. **Driver cancel** is allowed from OPEN or DRIVER_ARRIVED. The pool becomes CANCELLED. Every active member's `left_at` is set, `seats_taken` goes back to 0, and each member request **returns to REQUESTED**. Riders are re-queued, not punished for the driver cancelling.
+4. **Driver cancel** is allowed from OPEN or DRIVER_ARRIVED. The pool becomes CANCELLED. Every active member's `left_at` is set, `seats_taken` goes back to 0, and each member request **returns to REQUESTED**. Riders are re-queued, not punished for the driver cancelling. After the cancellation commits, each re-queued ride immediately tries to auto-join another open pool, using the same process as a new request.
 5. **One active of each.** A passenger has at most one active request (REQUESTED, MATCHED, DRIVER_ARRIVED, or STARTED). A vehicle has at most one active pool. Both rules are enforced by partial unique indexes.
 6. **Going offline.** A driver can't go offline while their vehicle has an active pool. Going online requires choosing a current zone.
 7. **Seats per request.** A request asks for 1 to `MAX_SEATS_PER_REQUEST = 3` seats, which is the largest vehicle in the fleet.
@@ -228,6 +228,10 @@ How this works under READ COMMITTED isolation:
 3. Once the first transaction commits, Postgres re-evaluates the waiting UPDATE's `WHERE` against the new row, so the loser sees `seats_taken + 1 > capacity` and updates 0 rows.
 4. The CHECK constraint is the final safety net if any code path ever skips this logic.
 
+Compatibility (§3.2) is checked **again after the pool row is locked**. Once the lock is held, nobody else can join, so the check can't race. If the ride turns out to be incompatible, the claim's transaction rolls back.
+
+During auto-join, **each attempt runs in its own transaction**. The ride request is committed first, as REQUESTED, and a failed attempt on one pool never undoes it.
+
 **Lock ordering:** every transaction that touches a pool locks the **pool row first**, then any request rows. For example, cancelling a matched ride first runs `SELECT … FROM pools WHERE id = $poolId FOR UPDATE`. A consistent order prevents deadlocks.
 
 Races and how each is handled:
@@ -274,10 +278,12 @@ A second test variant runs 10 concurrent requesters.
 | Status | Codes |
 |---|---|
 | 400 | VALIDATION_ERROR |
-| 401 | UNAUTHENTICATED |
+| 401 | UNAUTHENTICATED, INVALID_CREDENTIALS |
 | 403 | FORBIDDEN_ROLE |
 | 404 | NOT_FOUND (also used for another user's resources) |
-| 409 | INVALID_TRANSITION, NO_SEATS, ALREADY_MATCHED, INCOMPATIBLE, ACTIVE_RIDE_EXISTS, ACTIVE_POOL_EXISTS |
+| 409 | INVALID_TRANSITION, NO_SEATS, POOL_CLOSED, ALREADY_MATCHED, INCOMPATIBLE, ACTIVE_RIDE_EXISTS, ACTIVE_POOL_EXISTS, DRIVER_OFFLINE, WRONG_ZONE, EMAIL_TAKEN, CONFLICT |
+| 413 | PAYLOAD_TOO_LARGE |
+| 429 | RATE_LIMITED |
 | 500 | INTERNAL (details go to the log, not the client) |
 
 Why REST: the API has few resources, and its state changes are commands, which fit action endpoints well. Each endpoint is simple to test with one Supertest call. GraphQL's advantages (flexible fetching for many different clients) don't apply here.
@@ -355,7 +361,7 @@ Running `docker compose up` starts three services:
 | Service | Setup |
 |---|---|
 | `db` | `postgres:16-alpine`, with a named volume and a `pg_isready` healthcheck |
-| `api` | Multi-stage Node 24 image. `depends_on: db: service_healthy`. The entrypoint runs `prisma migrate deploy`, then the seed, then `node dist/server.js`. Healthcheck is `GET /health`. |
+| `api` | Multi-stage Node 24 image. `depends_on: db: service_healthy`. The entrypoint runs `prisma migrate deploy`, then the seed, then `node dist/server.js`. Healthcheck is `GET /api/health`. |
 | `web` | Multi-stage image: the Vite build served by nginx. nginx proxies `/api/` to `api:4000`, so the browser sees a single origin. |
 
 - `.env.example` lists: `DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `PORT`, `CORS_ORIGIN`, `LOG_LEVEL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `VITE_API_URL`. `.env` is gitignored.
