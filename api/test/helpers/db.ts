@@ -1,12 +1,14 @@
 import { CAST_EMAILS, type ZoneName } from '../../src/db/cast';
 import { seedReferenceData } from '../../src/db/seedData';
 import { prisma } from '../../src/lib/prisma';
+import { forgetTokens } from './http';
 
 const zoneIds = new Map<ZoneName, number>();
 
 /** Empties every table and reseeds zones plus the story cast. Call once per test file (beforeAll). */
 export async function resetDatabase(): Promise<void> {
   zoneIds.clear();
+  forgetTokens(); // the cast gets new user ids, so old tokens would point at deleted users
   await prisma.$executeRaw`TRUNCATE ride_events, pool_members, pools, ride_requests, vehicles, users, zones RESTART IDENTITY CASCADE`;
   await seedReferenceData(prisma);
 }

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authRouter, meRouter } from './auth';
+import { driverRouter } from './driver';
 import { faresRouter } from './fares';
 import { healthRouter } from './health';
 import { ridesRouter } from './rides';
@@ -13,3 +14,4 @@ apiRouter.use('/me', meRouter);
 apiRouter.use('/zones', zonesRouter);
 apiRouter.use('/fares', faresRouter);
 apiRouter.use('/rides', ridesRouter);
+apiRouter.use('/driver', driverRouter);
