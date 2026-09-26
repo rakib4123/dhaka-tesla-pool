@@ -1,4 +1,6 @@
 import type { UserRole, Vehicle, Zone } from '@prisma/client';
+import type { FareBreakdown } from '../domain/fare';
+import type { PoolStatus, RideStatus } from '../domain/transitions';
 
 // Response shapes. The web app mirrors these types (Plan 2).
 
@@ -39,4 +41,41 @@ export function toVehicleView(vehicle: Vehicle & { currentZone: Zone | null }): 
     isOnline: vehicle.isOnline,
     currentZone: vehicle.currentZone ? toZoneRef(vehicle.currentZone) : null,
   };
+}
+
+/** What a passenger may see about their pool: no other riders' names, destinations or fares. */
+export interface RidePoolView {
+  id: string;
+  status: PoolStatus;
+  driverName: string;
+  vehicleName: string;
+  vehiclePlate: string;
+  coRiderCount: number;
+}
+
+export interface RideView {
+  id: string;
+  status: RideStatus;
+  seats: number;
+  pickupZone: ZoneRef;
+  dropoffZone: ZoneRef;
+  distanceKm: number;
+  estimate: { soloPaisa: number; pooledPaisa: number };
+  /** Locked when the trip starts; null before that. */
+  fare: FareBreakdown | null;
+  cancelledBy: 'PASSENGER' | 'DRIVER' | null;
+  createdAt: string;
+  pool: RidePoolView | null;
+}
+
+export interface RideEventView {
+  type: string;
+  fromStatus: string | null;
+  toStatus: string | null;
+  actor: 'PASSENGER' | 'DRIVER' | 'SYSTEM';
+  createdAt: string;
+}
+
+export interface RideDetailView extends RideView {
+  events: RideEventView[];
 }
