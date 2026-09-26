@@ -1,12 +1,14 @@
-import type { Prisma } from '@prisma/client';
+import type { PoolMember, Prisma } from '@prisma/client';
 import { estimateFares } from '../domain/fare';
 import { canPassengerCancel } from '../domain/transitions';
 import { conflict, notFound } from '../lib/AppError';
-import { prisma } from '../lib/prisma';
+import { prisma, type Db } from '../lib/prisma';
 import { isUniqueViolation } from '../lib/prismaErrors';
 import type { TripInput } from '../routes/schemas';
 import { recordEvent } from './events';
 import { resolveTrip } from './fareService';
+import { lockPool } from './locks';
+import { tryAutoJoin } from './matchingService';
 import { toZoneRef, type RideDetailView, type RideView } from './views';
 
 const rideInclude = {
@@ -94,6 +96,8 @@ export async function createRide(passengerId: string, input: TripInput): Promise
     throw err;
   }
 
+  // "Figure it out in about a second": try to seat the rider right away.
+  await tryAutoJoin(rideId);
   return getRideForPassenger(rideId, passengerId);
 }
 
@@ -136,27 +140,68 @@ export async function listRides(passengerId: string): Promise<RideView[]> {
   return rides.map(toRideView);
 }
 
+const RETRY_MESSAGE = 'Your ride changed while you were cancelling. Refresh and try again';
+
 export async function cancelRide(rideId: string, passengerId: string): Promise<RideView> {
   const ride = await findOwnRide(rideId, passengerId);
   if (!canPassengerCancel(ride.status)) {
     throw conflict('INVALID_TRANSITION', `A ride that is ${ride.status.toLowerCase().replace('_', ' ')} can no longer be cancelled`);
   }
+  const membership = ride.memberships[0];
 
   await prisma.$transaction(async (tx) => {
-    // Guarded update: if the ride changed since we read it, touch nothing.
+    if (membership) await lockPool(tx, membership.poolId); // same lock order as claimSeats: pool first
+
+    // Guarded update: only succeeds if the ride is still in the status we read.
     const { count } = await tx.rideRequest.updateMany({
-      where: { id: rideId, status: 'REQUESTED' },
+      where: { id: rideId, status: ride.status },
       data: { status: 'CANCELLED', cancelledBy: 'PASSENGER' },
     });
-    if (count === 0) throw conflict('INVALID_TRANSITION', 'Your ride changed while you were cancelling. Refresh and try again');
+    if (count === 0) throw conflict('INVALID_TRANSITION', RETRY_MESSAGE);
+
     await recordEvent(tx, {
       type: 'RIDE_CANCELLED',
       rideRequestId: rideId,
+      poolId: membership?.poolId,
       actorUserId: passengerId,
-      fromStatus: 'REQUESTED',
+      fromStatus: ride.status,
       toStatus: 'CANCELLED',
     });
+    if (membership) await releaseSeats(tx, membership, passengerId);
   });
 
   return getRideForPassenger(rideId, passengerId);
+}
+
+/** Gives a leaving rider's seats back to the pool; an emptied pool is cancelled so the driver is free. */
+async function releaseSeats(tx: Db, membership: PoolMember, actorUserId: string): Promise<void> {
+  const { count } = await tx.poolMember.updateMany({
+    where: { id: membership.id, leftAt: null },
+    data: { leftAt: new Date(), leftReason: 'PASSENGER_CANCELLED' },
+  });
+  if (count === 0) throw conflict('INVALID_TRANSITION', RETRY_MESSAGE); // membership changed under us
+
+  const pool = await tx.pool.update({
+    where: { id: membership.poolId },
+    data: { seatsTaken: { decrement: membership.seats } },
+  });
+  await recordEvent(tx, {
+    type: 'POOL_MEMBER_LEFT',
+    poolId: pool.id,
+    rideRequestId: membership.rideRequestId,
+    actorUserId,
+    metadata: { seats: membership.seats, seatsTaken: pool.seatsTaken, reason: 'PASSENGER_CANCELLED' },
+  });
+
+  if (pool.seatsTaken === 0) {
+    await tx.pool.update({ where: { id: pool.id }, data: { status: 'CANCELLED' } });
+    await recordEvent(tx, {
+      type: 'POOL_STATUS_CHANGED',
+      poolId: pool.id,
+      actorUserId: null,
+      fromStatus: pool.status,
+      toStatus: 'CANCELLED',
+      metadata: { reason: 'EMPTY' },
+    });
+  }
 }

@@ -79,3 +79,42 @@ export interface RideEventView {
 export interface RideDetailView extends RideView {
   events: RideEventView[];
 }
+
+/** What Jashim sees about each rider: enough to pick up, drop off and collect cash. */
+export interface DriverRiderView {
+  rideId: string;
+  firstName: string;
+  seats: number;
+  dropoffZone: ZoneRef;
+  status: RideStatus;
+  /** Expected cash: the pooled estimate if 2+ riders are aboard, else solo. Replaced by the locked fare at start. */
+  estimatePaisa: number;
+  fareTotalPaisa: number | null;
+  leftReason: string | null;
+}
+
+export interface DriverPoolView {
+  id: string;
+  status: PoolStatus;
+  capacity: number;
+  seatsTaken: number;
+  isFull: boolean;
+  pickupZone: ZoneRef;
+  vehicle: { name: string; plate: string };
+  riders: DriverRiderView[];
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface RelevantRequestView {
+  rideId: string;
+  firstName: string;
+  seats: number;
+  pickupZone: ZoneRef;
+  dropoffZone: ZoneRef;
+  distanceKm: number;
+  estimateSoloPaisa: number;
+  estimatePooledPaisa: number;
+  requestedAt: string;
+}
