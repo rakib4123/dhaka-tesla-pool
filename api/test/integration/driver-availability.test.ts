@@ -32,6 +32,11 @@ describe('driver availability', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects a zone id beyond 32-bit range with 400', async () => {
+    const res = await api().put('/api/driver/availability').set(bearer(await loginAs('jashim'))).send({ online: true, zoneId: 3_000_000_000 });
+    expect(res.status).toBe(400);
+  });
+
   it('is for drivers only', async () => {
     const res = await api().put('/api/driver/availability').set(bearer(await loginAs('nusrat'))).send({ online: false });
     expect(res.status).toBe(403);
