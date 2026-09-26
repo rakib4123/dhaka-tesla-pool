@@ -44,3 +44,7 @@ export async function seatInvariant(poolId: string): Promise<{ seatsTaken: numbe
   const active = await prisma.poolMember.aggregate({ where: { poolId, leftAt: null }, _sum: { seats: true } });
   return { seatsTaken: pool.seatsTaken, activeSeats: active._sum.seats ?? 0 };
 }
+
+export async function poolAction(driver: DriverKey | PassengerKey, poolId: string, action: 'arrive' | 'start' | 'complete' | 'cancel') {
+  return api().post(`/api/pools/${poolId}/${action}`).set(bearer(await loginAs(driver)));
+}
