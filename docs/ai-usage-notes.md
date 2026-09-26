@@ -9,3 +9,4 @@ suggestion is accepted, rejected, or changed in a way that's worth mentioning.
 ## Log
 - 2026-09-26: **Accepted.** Split the PRD's single lifecycle into a pool state machine and a ride-request state machine, so per-passenger status and privacy stay simple.
 - 2026-09-26: **Changed.** The AI's first stack suggestion was framed around "what I'd pick". I asked instead which stack would be easiest to *explain*. That moved us to Express over NestJS and React + Vite over the Next.js App Router.
+- 2026-09-26: **Accepted.** A fresh AI reviewer checked the finished API and found a torn read in passenger cancel: the ride and its membership were read in two SELECTs, so a cancelled ride could keep holding a seat. It also found three smaller bugs that caused 500s or showed the wrong status. We reproduced each one with a failing test before fixing it (PR #8). Four minor findings were deliberately deferred.
