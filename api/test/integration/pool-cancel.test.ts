@@ -1,4 +1,5 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { prisma } from '../../src/lib/prisma';
 import { resetDatabase, resetRideData } from '../helpers/db';
 import { acceptRide, cancelRide, driverPool, getRide, goOffline, goOnline, requestRide, seatInvariant } from '../helpers/scenario';
 
@@ -47,5 +48,29 @@ describe('passenger cancels a matched ride', () => {
     await cancelRide('rafiq', rafiqId);
     const events = (await getRide('rafiq', rafiqId)).body.events.map((e: { type: string }) => e.type);
     expect(events).toEqual(['RIDE_REQUESTED', 'RIDE_MATCHED', 'RIDE_CANCELLED']);
+  });
+
+  describe('when the ownership read is stale', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    // Fault injection: cancelRide's first read runs outside the transaction and is made of two
+    // SELECTs. We hand it the torn result the review found (ride MATCHED, membership missing,
+    // e.g. read between a driver cancel and an auto-join). The transaction must not trust it.
+    it('never leaves a cancelled ride holding a seat', async () => {
+      const { nusratId, poolId } = await bulletWithNusratAndRafiq();
+      const real = await prisma.rideRequest.findFirst({ where: { id: nusratId } });
+      const findFirst = prisma.rideRequest.findFirst.bind(prisma.rideRequest);
+      vi.spyOn(prisma.rideRequest, 'findFirst').mockImplementationOnce((async (args: Parameters<typeof findFirst>[0]) => {
+        const fresh = await findFirst(args);
+        return { ...fresh, ...real, memberships: [] };
+      }) as never);
+
+      await cancelRide('nusrat', nusratId);
+
+      const ride = await prisma.rideRequest.findUniqueOrThrow({ where: { id: nusratId } });
+      const heldSeats = await prisma.poolMember.count({ where: { rideRequestId: nusratId, leftAt: null } });
+      if (ride.status === 'CANCELLED') expect(heldSeats).toBe(0);
+      expect(await seatInvariant(poolId)).toEqual({ seatsTaken: ride.status === 'CANCELLED' ? 1 : 2, activeSeats: ride.status === 'CANCELLED' ? 1 : 2 });
+    });
   });
 });

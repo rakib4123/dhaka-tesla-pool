@@ -1,6 +1,6 @@
 import type { PoolMember, Prisma } from '@prisma/client';
 import { estimateFares } from '../domain/fare';
-import { canPassengerCancel } from '../domain/transitions';
+import { canPassengerCancel, type RideStatus } from '../domain/transitions';
 import { conflict, notFound } from '../lib/AppError';
 import { prisma, type Db } from '../lib/prisma';
 import { isUniqueViolation } from '../lib/prismaErrors';
@@ -143,18 +143,29 @@ export async function listRides(passengerId: string): Promise<RideView[]> {
 const RETRY_MESSAGE = 'Your ride changed while you were cancelling. Refresh and try again';
 
 export async function cancelRide(rideId: string, passengerId: string): Promise<RideView> {
-  const ride = await findOwnRide(rideId, passengerId);
+  const ride = await findOwnRide(rideId, passengerId); // ownership (404) and a fast, friendly status check
   if (!canPassengerCancel(ride.status)) {
     throw conflict('INVALID_TRANSITION', `A ride that is ${ride.status.toLowerCase().replace('_', ' ')} can no longer be cancelled`);
   }
-  const membership = ride.memberships[0];
 
   await prisma.$transaction(async (tx) => {
+    // Decide from ONE statement so status and membership come from the same snapshot. The read
+    // above is two SELECTs and may be torn (e.g. MATCHED but no membership), so it is not trusted.
+    const [snapshot] = await tx.$queryRaw<CancelSnapshot[]>`
+      SELECT r.status, m.id AS membership_id, m.pool_id, m.seats
+        FROM ride_requests r
+        LEFT JOIN pool_members m ON m.ride_request_id = r.id AND m.left_at IS NULL
+       WHERE r.id = ${rideId}::uuid`;
+    if (!snapshot || !canPassengerCancel(snapshot.status)) throw conflict('INVALID_TRANSITION', RETRY_MESSAGE);
+    const membership = snapshot.membership_id && snapshot.pool_id && snapshot.seats !== null
+      ? { id: snapshot.membership_id, poolId: snapshot.pool_id, rideRequestId: rideId, seats: snapshot.seats }
+      : null;
+
     if (membership) await lockPool(tx, membership.poolId); // same lock order as claimSeats: pool first
 
-    // Guarded update: only succeeds if the ride is still in the status we read.
+    // Guarded update: only succeeds if the ride is still in the status we snapshotted.
     const { count } = await tx.rideRequest.updateMany({
-      where: { id: rideId, status: ride.status },
+      where: { id: rideId, status: snapshot.status },
       data: { status: 'CANCELLED', cancelledBy: 'PASSENGER' },
     });
     if (count === 0) throw conflict('INVALID_TRANSITION', RETRY_MESSAGE);
@@ -164,17 +175,25 @@ export async function cancelRide(rideId: string, passengerId: string): Promise<R
       rideRequestId: rideId,
       poolId: membership?.poolId,
       actorUserId: passengerId,
-      fromStatus: ride.status,
+      fromStatus: snapshot.status,
       toStatus: 'CANCELLED',
     });
+    // Under the pool lock, releaseSeats re-checks that this exact membership is still active.
     if (membership) await releaseSeats(tx, membership, passengerId);
   });
 
   return getRideForPassenger(rideId, passengerId);
 }
 
+interface CancelSnapshot {
+  status: RideStatus;
+  membership_id: string | null;
+  pool_id: string | null;
+  seats: number | null;
+}
+
 /** Gives a leaving rider's seats back to the pool; an emptied pool is cancelled so the driver is free. */
-async function releaseSeats(tx: Db, membership: PoolMember, actorUserId: string): Promise<void> {
+async function releaseSeats(tx: Db, membership: Pick<PoolMember, 'id' | 'poolId' | 'rideRequestId' | 'seats'>, actorUserId: string): Promise<void> {
   const { count } = await tx.poolMember.updateMany({
     where: { id: membership.id, leftAt: null },
     data: { leftAt: new Date(), leftReason: 'PASSENGER_CANCELLED' },
