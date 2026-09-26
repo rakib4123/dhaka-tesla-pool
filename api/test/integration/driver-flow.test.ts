@@ -76,6 +76,17 @@ describe('pool lifecycle', () => {
     expect(late.body.error.code).toBe('INVALID_TRANSITION');
   });
 
+  it('tells Shirin "Bullet is here" when she joins while Jashim is already waiting', async () => {
+    const { poolId } = await storyPool();
+    await poolAction('jashim', poolId, 'arrive');
+    const shirin = await requestRide('shirin', 'Banani', 'Mohakhali');
+    expect(shirin.body.status).toBe('DRIVER_ARRIVED');
+    const events = (await getRide('shirin', shirin.body.id)).body.events.map((e: { toStatus: string }) => e.toStatus);
+    expect(events).toEqual(['REQUESTED', 'MATCHED', 'DRIVER_ARRIVED']);
+    await poolAction('jashim', poolId, 'start');
+    expect((await getRide('shirin', shirin.body.id)).body).toMatchObject({ status: 'STARTED', fare: { totalPaisa: 5250 } });
+  });
+
   it('refuses new riders once the trip has started', async () => {
     const { poolId } = await storyPool();
     await poolAction('jashim', poolId, 'arrive');

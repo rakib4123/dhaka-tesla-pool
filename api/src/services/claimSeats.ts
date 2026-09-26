@@ -82,6 +82,19 @@ export async function claimSeatsInTx(tx: Db, args: ClaimArgs): Promise<void> {
     actorUserId: args.actorUserId,
     metadata: { seats: ride.seats, seatsTaken: pool.seatsTaken, capacity: pool.capacity },
   });
+
+  // Jashim is already waiting at pickup: the new rider should see "Bullet is here", not "Matched".
+  if (pool.status === 'DRIVER_ARRIVED') {
+    await tx.rideRequest.update({ where: { id: ride.id }, data: { status: 'DRIVER_ARRIVED' } });
+    await recordEvent(tx, {
+      type: 'RIDE_STATUS_CHANGED',
+      rideRequestId: ride.id,
+      poolId: pool.id,
+      actorUserId: args.actorUserId,
+      fromStatus: 'MATCHED',
+      toStatus: 'DRIVER_ARRIVED',
+    });
+  }
 }
 
 /** Standalone claim in its own transaction; reports failure instead of throwing. */
