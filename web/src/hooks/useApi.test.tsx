@@ -68,7 +68,8 @@ describe('useApi', () => {
     const { result } = renderHook(() => useApi(fetcher));
     answer = 'Waiting for a Tesla'; // Nusrat just booked while the first load was still running
     await act(() => result.current.refetch());
-    await waitFor(() => expect(result.current.data).toBe('Waiting for a Tesla'));
+    // awaiting refetch means the fresh data is already on screen, not merely queued
+    expect(result.current.data).toBe('Waiting for a Tesla');
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
