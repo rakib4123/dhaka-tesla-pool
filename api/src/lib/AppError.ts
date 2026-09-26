@@ -1,5 +1,6 @@
 export type ErrorCode =
   | 'VALIDATION_ERROR'
+  | 'BAD_REQUEST'
   | 'UNAUTHENTICATED'
   | 'INVALID_CREDENTIALS'
   | 'FORBIDDEN_ROLE'
