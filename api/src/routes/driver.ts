@@ -28,3 +28,7 @@ driverRouter.get('/pool', async (req, res) => {
 driverRouter.get('/requests', async (req, res) => {
   res.json(await listRelevantRequests(currentUser(req).id));
 });
+
+driverRouter.get('/history', async (req, res) => {
+  res.json(await driverService.getDriverHistory(currentUser(req).id));
+});
