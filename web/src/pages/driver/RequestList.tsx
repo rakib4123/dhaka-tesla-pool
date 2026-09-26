@@ -4,6 +4,7 @@ import { api } from '../../api/endpoints';
 import { Button, Card } from '../../components/Button';
 import { EmptyState, ErrorState, InlineError, Loading } from '../../components/StateViews';
 import { useApi } from '../../hooks/useApi';
+import { singleClick } from '../../lib/clicks';
 import { formatTaka } from '../../lib/format';
 import { POLL_MS } from '../../lib/polling';
 
@@ -24,9 +25,9 @@ export function RequestList({ zoneName, onAccepted }: { zoneName: string; onAcce
     } catch (err) {
       setError(toApiError(err).message);
     } finally {
+      await requests.refetch(); // the next rider may now sit where this one was
       inFlight.current = false;
       setAcceptingId(null);
-      await requests.refetch();
     }
   }
 
@@ -52,7 +53,7 @@ export function RequestList({ zoneName, onAccepted }: { zoneName: string; onAcce
                 {`${formatTaka(request.estimateSoloPaisa)} solo · ${formatTaka(request.estimatePooledPaisa)} pooled`}
               </p>
             </div>
-            <Button aria-label={`Accept ${request.firstName}`} disabled={acceptingId !== null} onClick={() => void accept(request.rideId)}>
+            <Button aria-label={`Accept ${request.firstName}`} disabled={acceptingId !== null} onClick={singleClick(() => void accept(request.rideId))}>
               {acceptingId === request.rideId ? 'Accepting…' : 'Accept'}
             </Button>
           </Card>
