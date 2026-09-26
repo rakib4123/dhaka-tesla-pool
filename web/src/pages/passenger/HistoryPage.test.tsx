@@ -40,6 +40,10 @@ describe('passenger history', () => {
     expect(screen.getByText('Your Tesla arrived at the pickup')).toBeInTheDocument();
     expect(screen.getByText('Trip started and your fare was locked')).toBeInTheDocument();
     expect(screen.getByText('Trip completed')).toBeInTheDocument();
+    // spec §8: past rides show the fare breakdown, including what pooling saved
+    expect(screen.getByText('Base fare')).toBeInTheDocument();
+    expect(screen.getByText('Pool discount')).toBeInTheDocument();
+    expect(screen.getByText('-৳17.50')).toBeInTheDocument();
   });
 
   it('describes an automatic match and a driver cancellation in plain words', async () => {
