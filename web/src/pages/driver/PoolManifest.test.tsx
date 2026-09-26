@@ -1,6 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { DriverPool } from '../../api/types';
 import { driverPool, rafiqRider, rider } from '../../test/fixtures';
 import { mockApi } from '../../test/mockApi';
 import { PoolManifest } from './PoolManifest';
@@ -87,5 +89,34 @@ describe("Jashim's pool manifest", () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent("You can't start a trip that is open");
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  describe('a double-click on a fast connection', () => {
+    /** Refreshes the pool the way DriverPage does, so the button changes under the mouse. */
+    function LivePool({ initial, next }: { initial: DriverPool; next: DriverPool }) {
+      const [pool, setPool] = useState(initial);
+      return <PoolManifest pool={pool} onChanged={() => setPool(next)} />;
+    }
+
+    it('starts the trip once and never completes it by accident', async () => {
+      const { calls } = mockApi({ 'POST /pools/pool-1/start': { body: withRafiq({ status: 'STARTED' }) } });
+      render(<LivePool initial={withRafiq({ status: 'DRIVER_ARRIVED' })} next={withRafiq({ status: 'STARTED' })} />);
+
+      await userEvent.dblClick(screen.getByRole('button', { name: 'Start trip' }));
+      await screen.findByRole('button', { name: 'Complete trip' });
+
+      expect(calls.map((call) => call.path)).toEqual(['/pools/pool-1/start']);
+    });
+
+    it('never skips the cancel confirmation', async () => {
+      const { calls } = mockApi({ 'POST /pools/pool-1/cancel': { body: withRafiq({ status: 'CANCELLED' }) } });
+      render(<PoolManifest pool={withRafiq()} onChanged={vi.fn()} />);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel trip' }));
+      // In a browser the 2nd click of the double-click lands on whatever is now under the pointer.
+      fireEvent.click(screen.getByRole('button', { name: 'Yes, cancel trip' }), { detail: 2 });
+
+      expect(calls).toHaveLength(0);
+    });
   });
 });

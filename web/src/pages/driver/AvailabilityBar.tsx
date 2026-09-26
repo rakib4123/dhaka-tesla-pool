@@ -6,6 +6,7 @@ import { Button, Card } from '../../components/Button';
 import { InlineError } from '../../components/StateViews';
 import { ZoneSelect } from '../../components/ZoneSelect';
 import { useApi } from '../../hooks/useApi';
+import { singleClick } from '../../lib/clicks';
 
 export function AvailabilityBar({ vehicle, hasActivePool, onChanged }: {
   vehicle: Vehicle;
@@ -40,7 +41,7 @@ export function AvailabilityBar({ vehicle, hasActivePool, onChanged }: {
         </div>
         {vehicle.isOnline ? (
           <div className="text-right">
-            <Button variant="secondary" disabled={pending || hasActivePool} onClick={() => void setOnline(false)}>
+            <Button variant="secondary" disabled={pending || hasActivePool} onClick={singleClick(() => void setOnline(false))}>
               Go offline
             </Button>
             {hasActivePool && <p className="mt-1 text-xs text-stone-500">Finish or cancel your trip first.</p>}
@@ -49,7 +50,7 @@ export function AvailabilityBar({ vehicle, hasActivePool, onChanged }: {
           <div className="flex items-end gap-2">
             <ZoneSelect id="driver-zone" label="Your zone" zones={zones.data ?? []} value={zoneId} onChange={setZoneId}
               disabled={!zones.data} />
-            <Button disabled={pending || zoneId === ''} onClick={() => void setOnline(true)}>
+            <Button disabled={pending || zoneId === ''} onClick={singleClick(() => void setOnline(true))}>
               {pending ? 'Going online…' : 'Go online'}
             </Button>
           </div>
