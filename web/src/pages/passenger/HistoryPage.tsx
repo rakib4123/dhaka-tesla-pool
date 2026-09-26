@@ -3,6 +3,7 @@ import { api } from '../../api/endpoints';
 import type { Ride } from '../../api/types';
 import { Button, Card } from '../../components/Button';
 import { EventTimeline } from '../../components/EventTimeline';
+import { FareBreakdown } from '../../components/FareBreakdown';
 import { EmptyState, ErrorState, Loading } from '../../components/StateViews';
 import { useApi } from '../../hooks/useApi';
 import { formatDateTime, formatTaka } from '../../lib/format';
@@ -38,7 +39,12 @@ function RideHistoryItem({ ride }: { ride: Ride }) {
           {open ? 'Hide details' : 'Details'}
         </Button>
       </div>
-      {open && <RideTimeline rideId={ride.id} />}
+      {open && (
+        <div className="space-y-3">
+          {ride.fare && <FareBreakdown fare={ride.fare} distanceKm={ride.distanceKm} />}
+          <RideTimeline rideId={ride.id} />
+        </div>
+      )}
     </Card>
   );
 }

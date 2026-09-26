@@ -6,6 +6,7 @@ import { Button, Card } from '../../components/Button';
 import { FareBreakdown } from '../../components/FareBreakdown';
 import { InlineError } from '../../components/StateViews';
 import { StatusStepper } from '../../components/StatusStepper';
+import { singleClick } from '../../lib/clicks';
 import { formatTaka } from '../../lib/format';
 import { canCancelRide, rideStatusLabel } from '../../lib/status';
 
@@ -36,10 +37,10 @@ export function ActiveRideCard({ ride, onChanged }: { ride: Ride; onChanged: () 
     } catch (err) {
       setError(toApiError(err).message);
     } finally {
+      await onChanged(); // the API is the source of truth, so show whatever it says now
       inFlight.current = false;
       setCancelling(false);
       setConfirming(false);
-      await onChanged(); // the API is the source of truth, so show whatever it says now
     }
   }
 
@@ -77,7 +78,7 @@ export function ActiveRideCard({ ride, onChanged }: { ride: Ride; onChanged: () 
         (confirming ? (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm">Cancel this ride?</span>
-            <Button variant="danger" disabled={cancelling} onClick={() => void cancel()}>
+            <Button variant="danger" disabled={cancelling} onClick={singleClick(() => void cancel())}>
               {cancelling ? 'Cancelling…' : 'Yes, cancel'}
             </Button>
             <Button variant="secondary" disabled={cancelling} onClick={() => setConfirming(false)}>
@@ -85,7 +86,7 @@ export function ActiveRideCard({ ride, onChanged }: { ride: Ride; onChanged: () 
             </Button>
           </div>
         ) : (
-          <Button variant="danger" onClick={() => setConfirming(true)}>
+          <Button variant="danger" onClick={singleClick(() => setConfirming(true))}>
             Cancel ride
           </Button>
         ))}

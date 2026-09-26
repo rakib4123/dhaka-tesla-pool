@@ -5,6 +5,7 @@ import type { DriverPool, PoolAction } from '../../api/types';
 import { Button, Card } from '../../components/Button';
 import { SeatMeter } from '../../components/SeatMeter';
 import { InlineError } from '../../components/StateViews';
+import { singleClick } from '../../lib/clicks';
 import { formatTaka } from '../../lib/format';
 import { canCancelPool, NEXT_POOL_ACTION } from '../../lib/status';
 
@@ -43,10 +44,10 @@ export function PoolManifest({ pool, onChanged }: { pool: DriverPool; onChanged:
     } catch (err) {
       setError(toApiError(err).message);
     } finally {
-      inFlight.current = false;
+      await onChanged(); // show what the API says now, not what we hoped
+      inFlight.current = false; // only now can the (possibly relabelled) button be pressed again
       setPending(null);
       setConfirmingCancel(false);
-      await onChanged(); // show what the API says now, not what we hoped
     }
   }
 
@@ -81,14 +82,14 @@ export function PoolManifest({ pool, onChanged }: { pool: DriverPool; onChanged:
 
       <div className="flex flex-wrap gap-2">
         {next && (
-          <Button disabled={pending !== null} onClick={() => void run(next.action)}>
+          <Button disabled={pending !== null} onClick={singleClick(() => void run(next.action))}>
             {pending === next.action ? 'Saving…' : next.label}
           </Button>
         )}
         {canCancelPool(pool.status) &&
           (confirmingCancel ? (
             <>
-              <Button variant="danger" disabled={pending !== null} onClick={() => void run('cancel')}>
+              <Button variant="danger" disabled={pending !== null} onClick={singleClick(() => void run('cancel'))}>
                 Yes, cancel trip
               </Button>
               <Button variant="secondary" disabled={pending !== null} onClick={() => setConfirmingCancel(false)}>
@@ -96,7 +97,7 @@ export function PoolManifest({ pool, onChanged }: { pool: DriverPool; onChanged:
               </Button>
             </>
           ) : (
-            <Button variant="danger" disabled={pending !== null} onClick={() => setConfirmingCancel(true)}>
+            <Button variant="danger" disabled={pending !== null} onClick={singleClick(() => setConfirmingCancel(true))}>
               Cancel trip
             </Button>
           ))}

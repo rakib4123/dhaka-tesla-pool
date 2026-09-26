@@ -18,34 +18,41 @@ export function useApi<T>(fetcher: () => Promise<T>, options: { pollMs?: number 
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
   const mounted = useRef(true);
-  const inFlight = useRef(false);
-  const queued = useRef(false);
+  const current = useRef<Promise<void> | null>(null);
+  const next = useRef<Promise<void> | null>(null);
   const [state, setState] = useState<{ data: T | undefined; error: ApiError | null; loading: boolean }>({
     data: undefined,
     error: null,
     loading: true,
   });
 
-  const refetch = useCallback(async () => {
-    if (inFlight.current) {
-      queued.current = true; // never overlap, but don't drop it: e.g. "refresh after booking" must show the new ride
-      return;
-    }
-    inFlight.current = true;
+  const load = useCallback(async () => {
     setState((prev) => (prev.data === undefined ? { ...prev, loading: true } : prev));
     try {
       const data = await fetcherRef.current();
       if (mounted.current) setState({ data, error: null, loading: false });
     } catch (err) {
       if (mounted.current) setState((prev) => ({ ...prev, error: toApiError(err), loading: false }));
-    } finally {
-      inFlight.current = false;
-      if (queued.current && mounted.current) {
-        queued.current = false;
-        void refetch();
-      }
     }
   }, []);
+
+  /**
+   * Starts a load, or, if one is running, joins the single load queued behind it. Either way the
+   * promise resolves only once fresh data is in state, so "refresh after booking" really shows the new ride.
+   */
+  const refetch = useCallback((): Promise<void> => {
+    if (!current.current) {
+      current.current = load().finally(() => {
+        current.current = null;
+      });
+      return current.current;
+    }
+    next.current ??= current.current.then(() => {
+      next.current = null;
+      return mounted.current ? refetch() : undefined;
+    });
+    return next.current;
+  }, [load]);
 
   useEffect(() => {
     mounted.current = true;
