@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],
+    globalSetup: ['test/globalSetup.ts'],
     fileParallelism: false, // integration tests share one database
     testTimeout: 20_000,
     hookTimeout: 30_000,
